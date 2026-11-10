@@ -1,0 +1,20 @@
+[Unit]
+Description=Tank level web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Change User and the paths to match your Pi.
+# The user must be in the "dialout" group to read /dev/serial0:  sudo usermod -aG dialout pi
+User=pi
+WorkingDirectory=/home/pi/tank
+ExecStart=/usr/bin/python3 /home/pi/tank/server.py
+Environment=SENSOR=uart
+Environment=SERIAL_PORT=/dev/serial0
+Environment=SENSOR_TO_BOTTOM_M=3.5
+Environment=PORT=8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

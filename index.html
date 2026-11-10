@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tank Level</title>
+<style>
+  :root {
+    --bg1: #e9f0fa; --bg2: #f6f9fd; --text: #2b2f36; --muted: #7b8494;
+    --water1: #2f86f0; --water2: #5aa9f6; --card: #fff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: linear-gradient(160deg, var(--bg1), var(--bg2) 60%);
+  }
+  main { max-width: 440px; margin: 0 auto; padding: 24px 20px 40px; }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .stats { display: flex; flex-direction: column; gap: 34px; padding-top: 4px; }
+  .stat .label { font-size: 15px; color: #444; margin-bottom: 6px; }
+  .stat .value { font-size: 30px; font-weight: 500; }
+  .tank-wrap { display: flex; align-items: center; gap: 10px; }
+  .tank {
+    position: relative; width: 62px; height: 330px; background: #fff;
+    border-radius: 14px; overflow: hidden; box-shadow: 0 2px 10px rgba(60,100,160,.12);
+  }
+  .water {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 0%;
+    background: linear-gradient(var(--water1), var(--water2)); transition: height 1s ease;
+  }
+  .water::before {  /* wavy surface */
+    content: ""; position: absolute; left: -50%; top: -9px; width: 200%; height: 18px;
+    background: radial-gradient(circle at 10px 18px, transparent 9px, var(--water1) 10px) 0 0 / 20px 18px repeat-x;
+    animation: wave 3s linear infinite;
+  }
+  @keyframes wave { to { transform: translateX(20px); } }
+  .tick { position: absolute; left: 20px; width: 22px; height: 1px; background: #cfd5df; }
+  .pct { font-size: 17px; }
+  .caption { text-align: center; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .card { background: var(--card); border-radius: 18px; padding: 16px; margin-top: 26px;
+          box-shadow: 0 2px 12px rgba(60,100,160,.1); }
+  h2 { font-size: 14px; font-weight: 400; color: #555; margin: 30px 0 -14px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  .tabs button {
+    border: 0; background: none; padding: 7px 16px; border-radius: 999px;
+    font-size: 13px; color: #444; cursor: pointer;
+  }
+  .tabs button.active { background: var(--water1); color: #fff; }
+  svg { width: 100%; height: 190px; display: block; }
+  svg text { font-size: 11px; fill: var(--muted); }
+  .status-Low { color: #d9534f; } .status-High { color: #e08a00; }
+  .offline { color: #d9534f; font-size: 12px; text-align: center; height: 14px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div class="stats">
+      <div class="stat"><div class="label">Liquid Level Ratio</div><div class="value" id="ratio">–</div></div>
+      <div class="stat"><div class="label">Liquid Level Depth</div><div class="value" id="depth">–</div></div>
+      <div class="stat"><div class="label">Liquid Level Status</div><div class="value" id="status">–</div></div>
+    </div>
+    <div class="tank-wrap">
+      <div class="tank">
+        <div class="tick" style="top:60px"></div>
+        <div class="tick" style="top:100px"></div>
+        <div class="water" id="water"></div>
+      </div>
+      <div class="pct" id="pct"></div>
+    </div>
+  </div>
+  <div class="caption" id="caption">&nbsp;</div>
+  <div class="offline" id="offline"></div>
+
+  <h2>Liquid Level Depth</h2>
+  <div class="card">
+    <div class="tabs" id="tabs">
+      <button class="active" data-r="day">Day</button>
+      <button data-r="month">Month</button>
+      <button data-r="year">Year</button>
+    </div>
+    <svg id="chart" viewBox="0 0 360 190" preserveAspectRatio="none"></svg>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let range = "day", tankH = 3.5;
+
+function fmtTs(ts) {
+  const d = new Date(ts * 1000), p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+async function refreshLevel() {
+  try {
+    const resp = await fetch("/api/level");
+    if (!resp.ok) throw new Error("no reading");
+    const r = await resp.json();
+    tankH = r.tank_height_m;
+    $("ratio").textContent = r.ratio_pct + "%";
+    $("depth").textContent = r.depth_m.toFixed(2) + "m";
+    $("status").textContent = r.status;
+    $("status").className = "value status-" + r.status;
+    $("water").style.height = r.ratio_pct + "%";
+    $("pct").textContent = r.ratio_pct + "%";
+    $("caption").textContent = `${fmtTs(r.ts)}  __${r.depth_m.toFixed(2)}m` + (r.simulated ? "  (simulated)" : "");
+    $("offline").textContent = "";
+  } catch (e) {
+    $("offline").textContent = "Connection lost – retrying…";
+  }
+}
+
+function labelFor(ts) {
+  const d = new Date(ts * 1000);
+  if (range === "day") return d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+  if (range === "month") return d.toLocaleDateString([], {month: "short", day: "numeric"});
+  return d.toLocaleDateString([], {month: "short"});
+}
+
+async function refreshChart() {
+  const pts = await (await fetch("/api/history?range=" + range)).json();
+  const svg = $("chart"), W = 360, H = 190, L = 34, R = 8, T = 10, B = 24;
+  let out = "";
+  const yMax = Math.ceil(tankH);
+  for (let v = 0; v <= yMax; v += Math.max(0.5, yMax / 4)) {
+    const y = T + (H - T - B) * (1 - v / yMax);
+    out += `<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="#e6eaf0"/>` +
+           `<text x="${L-6}" y="${y+4}" text-anchor="end">${v.toFixed(2)}</text>`;
+  }
+  if (pts.length > 1) {
+    const t0 = pts[0][0], t1 = pts[pts.length-1][0];
+    const X = t => L + (W - L - R) * (t - t0) / ((t1 - t0) || 1);
+    const Y = d => T + (H - T - B) * (1 - d / yMax);
+    const line = pts.map((p, i) => (i ? "L" : "M") + X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join("");
+    out += `<path d="${line}L${X(t1)},${H-B}L${X(t0)},${H-B}Z" fill="rgba(47,134,240,.12)"/>` +
+           `<path d="${line}" fill="none" stroke="#2f86f0" stroke-width="2" stroke-linejoin="round"/>`;
+    for (let i = 0; i < 5; i++) {
+      const t = t0 + (t1 - t0) * i / 4;
+      out += `<text x="${X(t)}" y="${H-6}" text-anchor="${i===0?"start":i===4?"end":"middle"}">${labelFor(t)}</text>`;
+    }
+  } else {
+    out += `<text x="${W/2}" y="${H/2}" text-anchor="middle">No data yet</text>`;
+  }
+  svg.innerHTML = out;
+}
+
+$("tabs").addEventListener("click", e => {
+  if (!e.target.dataset.r) return;
+  range = e.target.dataset.r;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b === e.target));
+  refreshChart();
+});
+
+refreshLevel().then(refreshChart);
+setInterval(refreshLevel, 5000);
+setInterval(refreshChart, 60000);
+</script>
+</body>
+</html>
